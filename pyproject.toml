@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "signal-engine"
+version = "0.1.0"
+description = "Aggregate, normalize, and analyze static code analysis results."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "AGPL-3.0" }
+
+authors = [
+    { name = "Paolo Perego", email = "paolo@armoredcode.com" }
+]
+
+urls = { "Homepage" = "https://github.com/armoredcode/signal-engine" }
+
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent"
+]
+
+dependencies = [
+    "typer>=0.9"
+]
+
+[project.scripts]
+signal-cli = "signal_engine.cli:app"
+
+[tool.setuptools]
+packages = ["signal_engine"]
