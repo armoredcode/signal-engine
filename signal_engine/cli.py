@@ -3,7 +3,7 @@ import typer
 
 from typing import Optional
 
-from signal_engine.ingest import ingest_json, ingest_to_db
+from signal_engine.ingest import ingest_findings, normalize_tool_fields
 from signal_engine.normalize import normalize_findings
 from signal_engine.cluster import top_rules, top_files, cluster_findings
 from signal_engine.export import export_csv
@@ -15,14 +15,48 @@ app = typer.Typer(help="Signal Engine CLI")
 
 @app.command()
 def ingest(
-    file: Optional[str] = typer.Option(None, help="Single JSON file to ingest"),
-    dir: Optional[str] = typer.Option(None, help="Directory with JSON files to ingest"),
+    input_path: str = typer.Argument(
+        ..., help="JSON file or directory with static analysis outputs"
+    ),
+    repo_name: str = typer.Option(..., help="Repository name for DB storage"),
+    tool: str = typer.Option(..., help="Name of the tool that generated the findings"),
 ):
     """
-    Ingest findings into SQLite DB with deduplication and timestamp.
+    Ingest JSON findings into the SQLite DB for a given repository.
+    Supports a single file or a directory of JSON files.
     """
-    inserted, updated = ingest_to_db(input_dir=dir, file=file)
-    typer.echo(f"Ingest completed: inserted={inserted}, updated={updated}")
+    import os, json
+
+    findings = []
+
+    if os.path.isdir(input_path):
+        # Directory: ingest all JSON files
+        for filename in os.listdir(input_path):
+            if filename.endswith(".json"):
+                with open(os.path.join(input_path, filename)) as f:
+                    data = json.load(f)
+                    for r in data.get("results", []):
+                        normalized = normalize_tool_fields(r, tool)
+                        findings.append(normalized)
+    elif os.path.isfile(input_path) and input_path.endswith(".json"):
+        # Single JSON file
+        with open(input_path) as f:
+            data = json.load(f)
+            for r in data.get("results", []):
+                normalized = normalize_tool_fields(r, tool)
+                findings.append(normalized)
+    else:
+        typer.echo(
+            "Invalid input path. Must be a JSON file or directory containing JSON files."
+        )
+        raise typer.Exit(code=1)
+
+    if not findings:
+        typer.echo("No findings found in the given path.")
+        raise typer.Exit(code=1)
+
+    ingest_findings(findings, repo_name)
+    typer.echo(f"Ingested {len(findings)} findings into DB for repo '{repo_name}'.")
 
 
 # -----------------------------
