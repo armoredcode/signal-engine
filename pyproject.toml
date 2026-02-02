@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "signal-engine"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Aggregate, normalize, and analyze static code analysis results."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -23,7 +23,8 @@ classifiers = [
 ]
 
 dependencies = [
-    "typer>=0.9"
+  "typer>=0.9",
+  "appdirs>=1.4.4"
 ]
 
 [project.scripts]
@@ -31,3 +32,6 @@ signal-cli = "signal_engine.cli:app"
 
 [tool.setuptools]
 packages = ["signal_engine"]
+
+[tool.setuptools.dynamic]
+version = { attr = "signal_engine.__version__" }

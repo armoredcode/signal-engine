@@ -1,18 +1,35 @@
 #!/usr/bin/env python3
 import typer
-from signal_engine.ingest import ingest_json
+
+from typing import Optional
+
+from signal_engine.ingest import ingest_json, ingest_to_db
 from signal_engine.normalize import normalize_findings
 from signal_engine.cluster import top_rules, top_files, cluster_findings
 from signal_engine.export import export_csv
+from signal_engine import __version__
 
-app = typer.Typer(help="Signal Engine CLI - initial version")
+
+app = typer.Typer(help="Signal Engine CLI")
+
+
+@app.command()
+def ingest(
+    file: Optional[str] = typer.Option(None, help="Single JSON file to ingest"),
+    dir: Optional[str] = typer.Option(None, help="Directory with JSON files to ingest"),
+):
+    """
+    Ingest findings into SQLite DB with deduplication and timestamp.
+    """
+    inserted, updated = ingest_to_db(input_dir=dir, file=file)
+    typer.echo(f"Ingest completed: inserted={inserted}, updated={updated}")
 
 
 # -----------------------------
 # RUN: full pipeline
 # -----------------------------
 @app.command()
-def run(
+def analyze(
     input_dir: str = typer.Argument(
         ..., help="Directory with static analysis JSON outputs"
     ),
@@ -83,6 +100,25 @@ def report(
     clusters = cluster_findings(normalized)
     export_csv(top_r, top_f, clusters, output)
     typer.echo(f"Report saved to {output}")
+
+
+def version_callback(value: bool):
+    if value:
+        typer.echo(__version__)
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(
+        None,
+        "--version",
+        callback=version_callback,
+        is_eager=True,
+        help="Show the application version and exit",
+    ),
+):
+    pass
 
 
 if __name__ == "__main__":
