@@ -8,10 +8,11 @@ from signal_engine import __version__  # tool version
 
 TOOL_FIELD_MAP = {
     "semgrep": {
-        "file_path": "path",
-        "line_number": "start.line",
         "rule_id": "check_id",
-        "message": "extra.message",
+        "file_path": "path",
+        "message": ("extra", "message"),
+        "severity": "severity",
+        "line_number": ("start", "line"),
     },
     "bandit": {
         "file_path": "filename",
@@ -23,43 +24,30 @@ TOOL_FIELD_MAP = {
 }
 
 
-def normalize_tool_fields(finding: dict, tool: str) -> dict:
-    """Normalize a finding dict according to tool-specific mapping."""
-    mapping = TOOL_FIELD_MAP.get(tool, {})
-    normalized = {}
+def _get_nested(field, data):
+    if isinstance(field, tuple):
+        for key in field:
+            data = data.get(key, {})
+        return data or None
+    return data.get(field)
 
-    # file_path
-    path_key = mapping.get("file_path")
-    normalized["file_path"] = (
-        finding.get(path_key, "unknown_file") if path_key else "unknown_file"
-    )
 
-    # line_number
-    line_key = mapping.get("line_number")
-    # support nested keys like "start.line"
-    if line_key:
-        keys = line_key.split(".")
-        value = finding
-        for k in keys:
-            value = value.get(k, None)
-            if value is None:
-                break
-        normalized["line_number"] = value if value is not None else -1
-    else:
-        normalized["line_number"] = -1
+def normalize_tool_fields(finding, tool):
+    field_map = TOOL_FIELD_MAP.get(tool)
+    if not field_map:
+        raise ValueError(f"Unsupported tool: {tool}")
 
-    # rule_id
-    rule_key = mapping.get("rule_id")
-    normalized["rule_id"] = (
-        finding.get(rule_key, "unknown_rule") if rule_key else "unknown_rule"
-    )
+    normalized = {"tool": tool}
 
-    # message
-    msg_key = mapping.get("message")
-    normalized["message"] = finding.get(msg_key, "") if msg_key else ""
+    for target, source in field_map.items():
+        value = _get_nested(source, finding)
+        normalized[target] = value
 
-    # tool
-    normalized["tool"] = tool
+    if not normalized["rule_id"]:
+        raise ValueError("Missing rule_id after normalization (check tool mapping)")
+
+    if normalized.get("line_number") is None:
+        raise ValueError(f"Missing line_number after normalization for tool {tool}")
 
     return normalized
 

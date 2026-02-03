@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
+import os
 import typer
+import sqlite3
 
 from typing import Optional
 
-from signal_engine.ingest import ingest_findings, normalize_tool_fields
+from signal_engine.ingest import (
+    ingest_findings,
+    normalize_tool_fields,
+    fetch_findings,
+    get_repo_db_path,
+)
 from signal_engine.normalize import normalize_findings
 from signal_engine.cluster import top_rules, top_files, cluster_findings
 from signal_engine.export import export_csv
@@ -59,26 +66,41 @@ def ingest(
     typer.echo(f"Ingested {len(findings)} findings into DB for repo '{repo_name}'.")
 
 
-# -----------------------------
-# RUN: full pipeline
-# -----------------------------
 @app.command()
 def analyze(
-    input_dir: str = typer.Argument(
-        ..., help="Directory with static analysis JSON outputs"
-    ),
-    output: str = typer.Option("output.csv", "-o", "--output", help="Output CSV file"),
+    repo_name: str = typer.Option(..., help="Repository name to analyze"),
+    file: str = typer.Option(None, help="Optional JSON file to filter"),
+    tool: str = typer.Option(None, help="Optional tool to filter"),
+    output: str = typer.Option(None, "-o", "--output", help="Output CSV file"),
 ):
     """
-    Aggregate, normalize, cluster and export static analysis findings.
+    Analyze findings previously ingested into the SQLite DB for a repository.
     """
-    findings = ingest_json(input_dir)
-    normalized = normalize_findings(findings)
+
+    # Fetch findings from repository DB
+    findings = fetch_findings(repo_name, file=file, tool=tool)
+
+    if not findings:
+        typer.echo("No findings found in DB for the given parameters.")
+        raise typer.Exit(code=1)
+
+    # Normalize, cluster, and extract top rules/files
+    normalized = cluster_findings(findings)
     top_r = top_rules(normalized)
     top_f = top_files(normalized)
-    clusters = cluster_findings(normalized)
-    export_csv(top_r, top_f, clusters, output)
-    typer.echo(f"Done! Results saved to {output}")
+
+    if output:
+        # Export results to CSV
+        export_csv(top_r, top_f, normalized, output)
+        typer.echo(f"Analysis completed! Results saved to {output}")
+    else:
+        # Print a simple table to stdout
+        typer.echo("Top Rules:")
+        for rule, count in top_r:
+            typer.echo(f"  {rule}: {count}")
+        typer.echo("\nTop Files:")
+        for fpath, count in top_f:
+            typer.echo(f"  {fpath}: {count}")
 
 
 # -----------------------------
@@ -134,6 +156,70 @@ def report(
     clusters = cluster_findings(normalized)
     export_csv(top_r, top_f, clusters, output)
     typer.echo(f"Report saved to {output}")
+
+
+@app.command()
+def info(
+    repo_name: str = typer.Option(..., help="Repository name to inspect"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show extended info"),
+):
+    """
+    Show information about the repository ingestion:
+    - DB path
+    - Ingest timestamp
+    - Number of findings
+    - (verbose) tool versions and top rules
+    """
+    db_path = get_repo_db_path(repo_name)
+
+    if not os.path.exists(db_path):
+        typer.echo(f"No DB found for repository '{repo_name}'.")
+        raise typer.Exit(code=1)
+
+    # Connect to DB
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Fetch ingest timestamp
+    cursor.execute("SELECT value FROM metadata WHERE key = 'created_at'")
+    row = cursor.fetchone()
+    ingest_time = row[0] if row else "unknown"
+
+    # Count findings
+    cursor.execute("SELECT COUNT(*) FROM findings")
+    count = cursor.fetchone()[0]
+
+    typer.echo(f"Repository: {repo_name}")
+    typer.echo(f"DB path: {db_path}")
+    typer.echo(f"Ingest time: {ingest_time}")
+    typer.echo(f"Number of findings: {count}")
+
+    if verbose:
+        # Tool version
+        cursor.execute("SELECT value FROM metadata WHERE key = 'tool_version'")
+        row = cursor.fetchone()
+        tool_version = row[0] if row else "unknown"
+        typer.echo(f"Tool version used for ingest: {tool_version}")
+
+        # Tools present in findings
+        cursor.execute("SELECT DISTINCT tool FROM findings")
+        tools = [r[0] for r in cursor.fetchall()]
+        typer.echo(f"Tools in DB: {', '.join(tools) if tools else 'none'}")
+
+        # Top 5 rules
+        cursor.execute("""
+            SELECT rule_id, COUNT(*) as cnt 
+            FROM findings 
+            GROUP BY rule_id 
+            ORDER BY cnt DESC 
+            LIMIT 5
+        """)
+        top_rules = cursor.fetchall()
+        typer.echo("Top 5 rules:")
+        for rule, cnt in top_rules:
+            typer.echo(f"  {rule}: {cnt}")
+
+    conn.close()
 
 
 def version_callback(value: bool):
