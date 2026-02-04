@@ -14,6 +14,25 @@ and this project adheres to
 
 ### Removed
 
+## [0.2.0] - 2026-02-04
+
+### Added
+
+- `info` CLI command to inspect repository DB:
+  - Shows DB path, ingest timestamp, and total findings
+  - `--verbose` option shows tools used and top 5 rules
+- Metadata fields in DB now include:
+  - `created_at` timestamp
+  - `tool_version`
+  - `db_version`
+
+### Changed
+
+- `analyze` command prints results to stdout by default; CSV export optional via
+  `-o/--output`.
+- `cluster_findings` no longer performs normalization; expects pre-normalized
+  findings.
+
 ## [0.1.0] - 2026-01-27
 
 ### Added
