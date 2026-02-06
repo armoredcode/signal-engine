@@ -85,6 +85,18 @@ def init_db(db_path: str):
         UNIQUE(repo, tool, file_path, line_number, rule_id, message_hash)
     )
     """)
+    # metrics table
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS metrics (
+        id            TEXT PRIMARY KEY,
+        tool          TEXT NOT NULL,
+        run_id        TEXT,
+        language      TEXT,
+        metric_type   TEXT NOT NULL,
+        value         REAL NOT NULL,
+        created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        extra         TEXT)
+    """)
 
     # Metadata table
     cursor.execute("""
