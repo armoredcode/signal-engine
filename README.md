@@ -106,6 +106,45 @@ Top 5 rules:
   ...
 ```
 
+## Database migrations
+
+Signal Engine uses a lightweight migration system to manage database schema
+changes over time. Each repository database keeps track of applied migrations
+via the `schema_migrations` table.
+
+Migrations are distributed with the package and applied explicitly via the CLI.
+This allows existing databases to be upgraded safely when new features introduce
+schema changes (e.g. new tables such as `metrics`).
+
+When running migrations, Signal Engine will:
+
+- Detect which migrations are missing for a given repository database
+- Apply them in order
+- Record their application to avoid reapplying them in the future
+
+This approach ensures backward compatibility with existing databases while
+allowing the schema to evolve as new analysis features are introduced.
+
+### Applying database migrations
+
+Signal Engine ships with database migrations to evolve the schema of repository
+databases over time (for example, when introducing new tables such as
+`metrics`).
+
+To apply migrations to a specific repository database, use the `migrate` command
+and pass the repository name:
+
+```sh
+signal-cli migrate --repo-name myrepo
+```
+
+To check if a migration is needed, you can use the --check flag. Please note
+that this don't apply pending migrations.
+
+```sh
+signal-cli migrate --repo-name myrepo
+```
+
 ## LICENSE
 
 [License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg) This

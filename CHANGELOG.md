@@ -10,6 +10,12 @@ and this project adheres to
 
 ### Added
 
+- Introduced database schema migrations support.
+- Added `schema_migrations` table to track applied migrations.
+- Added initial migration to create the `metrics` table for storing tool-level
+  metrics (e.g. cloc).
+- Added CLI support to apply pending migrations to repository databases.
+
 ### Changed
 
 ### Removed

@@ -14,6 +14,11 @@ from signal_engine.ingest import (
 from signal_engine.normalize import normalize_findings
 from signal_engine.cluster import top_rules, top_files, cluster_findings
 from signal_engine.export import export_csv
+from signal_engine.migrations import (
+    apply_migrations,
+    iter_migrations,
+    missing_migrations,
+)
 from signal_engine import __version__
 
 
@@ -101,6 +106,36 @@ def analyze(
         typer.echo("\nTop Files:")
         for fpath, count in top_f:
             typer.echo(f"  {fpath}: {count}")
+
+
+@app.command()
+def migrate(
+    repo_name: str = typer.Option(..., help="Repository name for DB migrate"),
+    check: bool = typer.Option(
+        False, "--check", help="Check if DB needs to be migrated"
+    ),
+):
+    db_path = get_repo_db_path(repo_name)
+    all_versions = {m.stem for m in iter_migrations()}
+    missing = missing_migrations(db_path, all_versions)
+
+    if check:
+        if missing:
+            typer.secho(
+                f"✗ {db_path} → missing {len(missing)} migrations", fg=typer.colors.RED
+            )
+            for v in sorted(missing):
+                typer.echo(f"   - {v}")
+        else:
+            typer.secho(f"✓ {db_path} → up to date", fg=typer.colors.GREEN)
+        return
+
+    if missing:
+        typer.echo(f"Migrating {db_path} …")
+        apply_migrations(db_path)
+        typer.secho("✓ Up to date", fg=typer.colors.GREEN)
+    else:
+        typer.secho(f"✓ {db_path} → already up to date", fg=typer.colors.GREEN)
 
 
 # -----------------------------
