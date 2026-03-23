@@ -11,7 +11,7 @@ TOOL_FIELD_MAP = {
         "rule_id": "check_id",
         "file_path": "path",
         "message": ("extra", "message"),
-        "severity": "severity",
+        "severity": ("extra", "severity"),
         "line_number": ("start", "line"),
     },
     "bandit": {
@@ -19,6 +19,7 @@ TOOL_FIELD_MAP = {
         "line_number": "line_number",
         "rule_id": "test_id",
         "message": "issue_text",
+        "severity": "issue_severity",
     },
     # tools specific mappings go there...
 }
@@ -88,7 +89,7 @@ def init_db(db_path: str):
     # metrics table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS metrics (
-        id            TEXT PRIMARY KEY,
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
         tool          TEXT NOT NULL,
         run_id        TEXT,
         language      TEXT,
@@ -126,6 +127,48 @@ def init_db(db_path: str):
 
 def hash_message(message: str) -> str:
     return hashlib.sha1(message.encode()).hexdigest()
+
+
+def ingest_metrics(cloc_data: dict, repo_name: str):
+    """Insert cloc metrics into the DB."""
+    db_path = get_repo_db_path(repo_name)
+    init_db(db_path)
+
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    for language, stats in cloc_data.items():
+        if language in ("header", "SUM"):
+            continue
+
+        cursor.execute(
+            """
+            INSERT INTO metrics (
+                tool,
+                language,
+                metric_type,
+                value
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            ("cloc", language, "code_lines", stats.get("code", 0)),
+        )
+
+        cursor.execute(
+            """
+            INSERT INTO metrics (
+                tool,
+                language,
+                metric_type,
+                value
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            ("cloc", language, "files", stats.get("nFiles", 0)),
+        )
+
+    conn.commit()
+    conn.close()
 
 
 def ingest_findings(findings: List[dict], repo_name: str):

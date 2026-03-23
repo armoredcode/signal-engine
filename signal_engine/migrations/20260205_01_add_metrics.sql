@@ -1,6 +1,6 @@
 -- metrics table
 CREATE TABLE IF NOT EXISTS metrics (
-    id            TEXT PRIMARY KEY,
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
     tool          TEXT NOT NULL,
     run_id        TEXT,
     language      TEXT,

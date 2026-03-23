@@ -9,16 +9,28 @@ and this project adheres to
 ## [Unreleased]
 
 ### Added
-
-- Introduced database schema migrations support.
-- Added `schema_migrations` table to track applied migrations.
-- Added initial migration to create the `metrics` table for storing tool-level
-  metrics (e.g. cloc).
-- Added CLI support to apply pending migrations to repository databases.
+- New `hotspots` CLI command to identify high-risk areas based on vulnerability density (Risk Score per 1000 LOC).
+- Risk-weighted scoring system for findings (Critical: 10.0, High: 5.0, Medium: 3.0, Low: 1.0, Info: 0.1).
+- Automatic language detection from file extensions for correlation between findings and LOC metrics.
+- New `analytics.py` module for advanced data processing and risk calculation.
+- Helper function `_load_json` in CLI to handle both directory and single file inputs consistently.
+- Improved `ingest` command to handle `cloc` metrics alongside security tool findings.
+- Re-added `ingest_metrics` and `ingest_findings` to CLI with correct data routing.
 
 ### Changed
+- Refactored `ingest.py` to use `INTEGER PRIMARY KEY AUTOINCREMENT` for the `metrics` table.
+- Consolidated normalization logic in `ingest.py`, moving away from fragmented `normalize.py`.
+- Updated `stats` and `report` commands to use the new JSON loading and normalization flow.
+
+### Fixed
+- Fixed severity mapping for Semgrep findings (nested `extra.severity`).
+- Added missing severity mapping for Bandit findings.
+- Fixed bug in `ingest_metrics` where undefined variables (`cur`, `cloc_json`) and missing `id` caused failures.
+- Fixed `analyze` command to correctly use clustered findings for top rules and files extraction.
+- Fixed missing imports in `cli.py` for `ingest_metrics`.
 
 ### Removed
+- Removed redundant `signal_engine/report.py` and `signal_engine/normalize.py` files to eliminate code duplication.
 
 ## [0.2.0] - 2026-02-04
 

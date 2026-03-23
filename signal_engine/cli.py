@@ -7,13 +7,14 @@ from typing import Optional
 
 from signal_engine.ingest import (
     ingest_findings,
+    ingest_metrics,
     normalize_tool_fields,
     fetch_findings,
     get_repo_db_path,
 )
-from signal_engine.normalize import normalize_findings
 from signal_engine.cluster import top_rules, top_files, cluster_findings
 from signal_engine.export import export_csv
+from signal_engine.analytics import get_vulnerability_density
 from signal_engine.migrations import (
     apply_migrations,
     iter_migrations,
@@ -23,6 +24,24 @@ from signal_engine import __version__
 
 
 app = typer.Typer(help="Signal Engine CLI")
+
+
+def _load_json(input_path: str):
+    import os, json
+
+    if os.path.isdir(input_path):
+        # Directory: return list of dicts from all JSON files
+        data_list = []
+        for filename in os.listdir(input_path):
+            if filename.endswith(".json"):
+                with open(os.path.join(input_path, filename)) as f:
+                    data_list.append(json.load(f))
+        return data_list
+    elif os.path.isfile(input_path) and input_path.endswith(".json"):
+        # Single JSON file: return it as a list with one element
+        with open(input_path) as f:
+            return [json.load(f)]
+    return []
 
 
 @app.command()
@@ -37,31 +56,26 @@ def ingest(
     Ingest JSON findings into the SQLite DB for a given repository.
     Supports a single file or a directory of JSON files.
     """
-    import os, json
-
-    findings = []
-
-    if os.path.isdir(input_path):
-        # Directory: ingest all JSON files
-        for filename in os.listdir(input_path):
-            if filename.endswith(".json"):
-                with open(os.path.join(input_path, filename)) as f:
-                    data = json.load(f)
-                    for r in data.get("results", []):
-                        normalized = normalize_tool_fields(r, tool)
-                        findings.append(normalized)
-    elif os.path.isfile(input_path) and input_path.endswith(".json"):
-        # Single JSON file
-        with open(input_path) as f:
-            data = json.load(f)
-            for r in data.get("results", []):
-                normalized = normalize_tool_fields(r, tool)
-                findings.append(normalized)
-    else:
+    data_list = _load_json(input_path)
+    if not data_list:
         typer.echo(
-            "Invalid input path. Must be a JSON file or directory containing JSON files."
+            "Invalid input path or no JSON files found. Must be a JSON file or directory containing JSON files."
         )
         raise typer.Exit(code=1)
+
+    if tool == "cloc":
+        # cloc usually produces one JSON per run, we take the first one found or merge them
+        # For simplicity, if it's a dir we ingest all, but cloc structure is a dict
+        for cloc_data in data_list:
+            ingest_metrics(cloc_data, repo_name)
+        typer.echo(f"Ingested metrics for repo '{repo_name}'.")
+        return
+
+    findings = []
+    for data in data_list:
+        for r in data.get("results", []):
+            normalized = normalize_tool_fields(r, tool)
+            findings.append(normalized)
 
     if not findings:
         typer.echo("No findings found in the given path.")
@@ -90,13 +104,13 @@ def analyze(
         raise typer.Exit(code=1)
 
     # Normalize, cluster, and extract top rules/files
-    normalized = cluster_findings(findings)
-    top_r = top_rules(normalized)
-    top_f = top_files(normalized)
+    clusters = cluster_findings(findings)
+    top_r = top_rules(clusters)
+    top_f = top_files(clusters)
 
     if output:
         # Export results to CSV
-        export_csv(top_r, top_f, normalized, output)
+        export_csv(top_r, top_f, clusters, output)
         typer.echo(f"Analysis completed! Results saved to {output}")
     else:
         # Print a simple table to stdout
@@ -146,6 +160,7 @@ def stats(
     input_dir: str = typer.Argument(
         ..., help="Directory with static analysis JSON outputs"
     ),
+    tool: str = typer.Option(..., help="Tool name for normalization"),
     top_n: int = typer.Option(
         10, "-n", "--top", help="Number of top rules/files to show"
     ),
@@ -153,16 +168,21 @@ def stats(
     """
     Display top rules, top files, and total number of findings.
     """
-    findings = ingest_json(input_dir)
-    normalized = normalize_findings(findings)
-    typer.echo(f"Total findings: {len(normalized)}\n")
+    data_list = _load_json(input_dir)
+    findings = []
+    for data in data_list:
+        for r in data.get("results", []):
+            findings.append(normalize_tool_fields(r, tool))
+
+    clusters = cluster_findings(findings)
+    typer.echo(f"Total findings: {len(findings)}\n")
 
     typer.echo("Top Rules:")
-    for rule, count in top_rules(normalized, top_n):
+    for rule, count in top_rules(clusters, top_n):
         typer.echo(f"  {rule}: {count}")
 
     typer.echo("\nTop Files:")
-    for path, count in top_files(normalized, top_n):
+    for path, count in top_files(clusters, top_n):
         typer.echo(f"  {path}: {count}")
 
 
@@ -174,6 +194,7 @@ def report(
     input_dir: str = typer.Argument(
         ..., help="Directory with static analysis JSON outputs"
     ),
+    tool: str = typer.Option(..., help="Tool name for normalization"),
     output: str = typer.Option(
         "report.csv", "-o", "--output", help="Output report CSV file"
     ),
@@ -184,13 +205,44 @@ def report(
     """
     Generate a report CSV with top rules, top files, and clusters.
     """
-    findings = ingest_json(input_dir)
-    normalized = normalize_findings(findings)
-    top_r = top_rules(normalized, top_n)
-    top_f = top_files(normalized, top_n)
-    clusters = cluster_findings(normalized)
+    data_list = _load_json(input_dir)
+    findings = []
+    for data in data_list:
+        for r in data.get("results", []):
+            findings.append(normalize_tool_fields(r, tool))
+
+    clusters = cluster_findings(findings)
+    top_r = top_rules(clusters, top_n)
+    top_f = top_files(clusters, top_n)
+
     export_csv(top_r, top_f, clusters, output)
     typer.echo(f"Report saved to {output}")
+
+
+@app.command()
+def hotspots(
+    repo_name: str = typer.Option(..., help="Repository name to analyze"),
+    tool: str = typer.Option(None, help="Optional tool to filter findings"),
+):
+    """
+    Identify language-based hotspots by calculating risk-weighted vulnerability density
+    (Risk Score per 1000 Lines of Code).
+    """
+    density_stats = get_vulnerability_density(repo_name, tool=tool)
+
+    if not density_stats:
+        typer.echo("No metrics or findings found for this repository.")
+        return
+
+    title = f"Risk Hotspots for '{repo_name}'"
+    if tool:
+        title += f" (Tool: {tool})"
+    typer.echo(f"\n{title}:")
+    typer.echo(f"{'Language':<20} | {'Findings':<10} | {'Risk Score':<12} | {'LOC':<8} | {'Risk Density (R/1kLOC)':<22}")
+    typer.echo("-" * 85)
+
+    for s in density_stats:
+        typer.echo(f"{s['language']:<20} | {s['findings']:<10} | {s['risk_score']:<12.1f} | {s['loc']:<8} | {s['density']:<22.2f}")
 
 
 @app.command()
