@@ -2,8 +2,15 @@
 import os
 import typer
 import sqlite3
-
 from typing import Optional
+
+from rich.console import Console
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
+from rich import box
+
+console = Console()
 
 from signal_engine.ingest import (
     ingest_findings,
@@ -73,7 +80,19 @@ def ingest(
 
     findings = []
     for data in data_list:
-        for r in data.get("results", []):
+        # Determine findings list based on tool structure
+        raw_results = []
+        if isinstance(data, list):
+            raw_results = data
+        elif isinstance(data, dict):
+            # Check for standard results keys
+            raw_results = data.get("results") or data.get("Results") or []
+            
+            # SARIF: findings are in runs[].results
+            if not raw_results and "runs" in data and data["runs"]:
+                raw_results = data["runs"][0].get("results", [])
+
+        for r in raw_results:
             normalized = normalize_tool_fields(r, tool)
             findings.append(normalized)
 
@@ -231,50 +250,38 @@ def hotspots(
     density_stats = get_vulnerability_density(repo_name, tool=tool)
 
     if not density_stats:
-        typer.echo("No metrics or findings found for this repository.")
+        console.print("[yellow]No metrics or findings found for this repository.[/yellow]")
         return
 
     title = f"Risk Hotspots for '{repo_name}'"
     if tool:
         title += f" (Tool: {tool})"
-    typer.echo(f"\n{title}:")
-    typer.echo(f"{'Language':<20} | {'Findings':<10} | {'Risk Score':<12} | {'LOC':<8} | {'Risk Density (R/1kLOC)':<22}")
-    typer.echo("-" * 85)
+    
+    table = Table(title=title, box=box.ROUNDED)
+    table.add_column("Language", style="cyan", no_wrap=True)
+    table.add_column("Findings", justify="right")
+    table.add_column("Risk Score", justify="right")
+    table.add_column("LOC", justify="right", style="blue")
+    table.add_column("Risk Density (R/1kLOC)", justify="right")
 
     for s in density_stats:
-        typer.echo(f"{s['language']:<20} | {s['findings']:<10} | {s['risk_score']:<12.1f} | {s['loc']:<8} | {s['density']:<22.2f}")
+        density_style = "white"
+        if s["density"] >= 10.0:
+            density_style = "bold red"
+        elif s["density"] >= 5.0:
+            density_style = "yellow"
+        elif s["density"] > 0:
+            density_style = "green"
 
+        table.add_row(
+            s["language"],
+            str(s["findings"]),
+            f"{s['risk_score']:.1f}",
+            str(s["loc"]),
+            Text(f"{s['density']:.2f}", style=density_style)
+        )
 
-@app.command()
-def dedup(
-    repo_name: str = typer.Option(..., help="Repository name to analyze"),
-    threshold: int = typer.Option(3, help="Line proximity threshold for deduplication"),
-):
-    """
-    Intelligent deduplication across tools. Groups findings in the same file
-    that are within 'threshold' lines of each other.
-    """
-    findings = fetch_findings(repo_name)
-    if not findings:
-        typer.echo("No findings found for this repository.")
-        return
-
-    clusters = smart_cluster(findings, line_threshold=threshold)
-    
-    typer.echo(f"\nSmart Deduplication for '{repo_name}' (Threshold: {threshold} lines):")
-    typer.echo(f"{'File':<30} | {'Line':<6} | {'Findings':<10} | {'Tools'}")
-    typer.echo("-" * 75)
-
-    for (file_path, line, _), cluster in clusters.items():
-        # Shorten path for display
-        short_path = (file_path[:27] + '...') if len(file_path) > 30 else file_path
-        
-        # Get unique tools in this cluster
-        tools = set(f["tool"] for f in cluster)
-        
-        typer.echo(f"{short_path:<30} | {line:<6} | {len(cluster):<10} | {', '.join(tools)}")
-
-    typer.echo(f"\nSummary: {len(findings)} raw findings collapsed into {len(clusters)} logical incidents.")
+    console.print(table)
 
 
 @app.command()
@@ -292,53 +299,92 @@ def info(
     db_path = get_repo_db_path(repo_name)
 
     if not os.path.exists(db_path):
-        typer.echo(f"No DB found for repository '{repo_name}'.")
+        console.print(f"[bold red]No DB found for repository '{repo_name}'.[/bold red]")
         raise typer.Exit(code=1)
 
     # Connect to DB
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Fetch ingest timestamp
-    cursor.execute("SELECT value FROM metadata WHERE key = 'created_at'")
-    row = cursor.fetchone()
-    ingest_time = row[0] if row else "unknown"
+    # Fetch metadata
+    cursor.execute("SELECT key, value FROM metadata")
+    metadata = dict(cursor.fetchall())
+    
+    ingest_time = metadata.get("created_at", "unknown")
+    db_version = metadata.get("db_version", "unknown")
+    tool_version = metadata.get("tool_version", "unknown")
 
     # Count findings
     cursor.execute("SELECT COUNT(*) FROM findings")
     count = cursor.fetchone()[0]
+    
+    # Count metrics
+    cursor.execute("SELECT COUNT(*) FROM metrics")
+    metrics_count = cursor.fetchone()[0]
 
-    typer.echo(f"Repository: {repo_name}")
-    typer.echo(f"DB path: {db_path}")
-    typer.echo(f"Ingest time: {ingest_time}")
-    typer.echo(f"Number of findings: {count}")
-
+    info_text = Text()
+    info_text.append(f"Repository: ", style="bold cyan")
+    info_text.append(f"{repo_name}\n")
+    info_text.append(f"DB Path: ", style="bold cyan")
+    info_text.append(f"{db_path}\n")
+    info_text.append(f"Ingest Time: ", style="bold yellow")
+    info_text.append(f"{ingest_time}\n")
+    info_text.append(f"Findings: ", style="bold green")
+    info_text.append(f"{count}\n")
+    info_text.append(f"Metrics: ", style="bold green")
+    info_text.append(f"{metrics_count}\n")
+    
     if verbose:
-        # Tool version
-        cursor.execute("SELECT value FROM metadata WHERE key = 'tool_version'")
-        row = cursor.fetchone()
-        tool_version = row[0] if row else "unknown"
-        typer.echo(f"Tool version used for ingest: {tool_version}")
+        info_text.append(f"DB Version: ", style="dim")
+        info_text.append(f"{db_version}\n", style="dim")
+        info_text.append(f"Tool Version: ", style="dim")
+        info_text.append(f"{tool_version}\n", style="dim")
 
-        # Tools present in findings
+        # Tools present
         cursor.execute("SELECT DISTINCT tool FROM findings")
         tools = [r[0] for r in cursor.fetchall()]
-        typer.echo(f"Tools in DB: {', '.join(tools) if tools else 'none'}")
-
-        # Top 5 rules
-        cursor.execute("""
-            SELECT rule_id, COUNT(*) as cnt 
-            FROM findings 
-            GROUP BY rule_id 
-            ORDER BY cnt DESC 
-            LIMIT 5
-        """)
-        top_rules = cursor.fetchall()
-        typer.echo("Top 5 rules:")
-        for rule, cnt in top_rules:
-            typer.echo(f"  {rule}: {cnt}")
+        if tools:
+            info_text.append(f"\nTools in DB: ", style="bold magenta")
+            info_text.append(f"{', '.join(tools)}\n")
 
     conn.close()
+    
+    console.print(Panel(info_text, title=f"[bold]Repo Info: {repo_name}[/bold]", border_style="blue", expand=False))
+
+
+@app.command()
+def dedup(
+    repo_name: str = typer.Option(..., help="Repository name to analyze"),
+    threshold: int = typer.Option(3, help="Line proximity threshold for deduplication"),
+):
+    """
+    Intelligent deduplication across tools. Groups findings in the same file
+    that are within 'threshold' lines of each other.
+    """
+    findings = fetch_findings(repo_name)
+    if not findings:
+        console.print("[yellow]No findings found for this repository.[/yellow]")
+        return
+
+    clusters = smart_cluster(findings, line_threshold=threshold)
+    
+    table = Table(title=f"Smart Deduplication: {repo_name} (Threshold: {threshold} lines)", box=box.SIMPLE_HEAD)
+    table.add_column("File", style="cyan")
+    table.add_column("Line", justify="right")
+    table.add_column("Findings", justify="right")
+    table.add_column("Tools", style="bold magenta")
+
+    for (file_path, line, _), cluster in clusters.items():
+        tools = set(f["tool"] for f in cluster)
+        table.add_row(
+            file_path,
+            str(line),
+            str(len(cluster)),
+            ", ".join(tools)
+        )
+
+    console.print(table)
+    console.print(f"\n[bold green]Summary:[/bold green] {len(findings)} raw findings collapsed into {len(clusters)} logical incidents.")
 
 
 def version_callback(value: bool):

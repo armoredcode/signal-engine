@@ -21,6 +21,69 @@ TOOL_FIELD_MAP = {
         "message": "issue_text",
         "severity": "issue_severity",
     },
+    "gitleaks": {
+        "rule_id": "RuleID",
+        "file_path": "File",
+        "message": "Description",
+        "severity": "Severity",
+        "line_number": "StartLine",
+    },
+    "trivy": {
+        "rule_id": "VulnerabilityID",
+        "file_path": "PkgName", # For vulnerabilities, the 'package' is the target
+        "message": "Title",
+        "severity": "Severity",
+        "line_number": "FixedVersion", # Trivy vuln doesn't have lines, we use placeholder
+    },
+    "ruff": {
+        "rule_id": "code",
+        "file_path": "filename",
+        "message": "message",
+        "severity": "severity",
+        "line_number": ("location", "row"),
+    },
+    "brakeman": {
+        "rule_id": "warning_type",
+        "file_path": "file",
+        "message": "message",
+        "severity": "confidence",
+        "line_number": "line",
+    },
+    "gosec": {
+        "rule_id": "rule_id",
+        "file_path": "file",
+        "message": "details",
+        "severity": "severity",
+        "line_number": "line",
+    },
+    "checkov": {
+        "rule_id": "check_id",
+        "file_path": "file_path",
+        "message": "check_name",
+        "severity": "severity",
+        "line_number": ("file_line_range", 0),
+    },
+    "hadolint": {
+        "rule_id": "code",
+        "file_path": "file",
+        "message": "message",
+        "severity": "level",
+        "line_number": "line",
+    },
+    "dawnscanner": {
+        "rule_id": "vulnerability_id",
+        "file_path": "file",
+        "message": "name",
+        "severity": "severity",
+        "line_number": "line",
+    },
+    "sarif": {
+        "rule_id": "ruleId",
+        "file_path": ("locations", 0, "physicalLocation", "artifactLocation", "uri"),
+        "line_number": ("locations", 0, "physicalLocation", "region", "startLine"),
+        "message": ("message", "text"),
+        "severity": "level",
+    },
     # tools specific mappings go there...
 }
 
@@ -28,8 +91,16 @@ TOOL_FIELD_MAP = {
 def _get_nested(field, data):
     if isinstance(field, tuple):
         for key in field:
-            data = data.get(key, {})
-        return data or None
+            if isinstance(data, list) and isinstance(key, int):
+                if key < len(data):
+                    data = data[key]
+                else:
+                    return None
+            elif isinstance(data, dict):
+                data = data.get(str(key) if not isinstance(key, int) else key, {})
+            else:
+                return None
+        return data if data != {} else None
     return data.get(field)
 
 
