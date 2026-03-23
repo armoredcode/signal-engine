@@ -9,6 +9,8 @@ and this project adheres to
 ## [Unreleased]
 
 ### Added
+- New `dedup` CLI command for intelligent multi-tool deduplication based on line proximity.
+- New `smart_cluster` algorithm in `cluster.py` to group findings within a specified line threshold (default 3 lines).
 - New `hotspots` CLI command to identify high-risk areas based on vulnerability density (Risk Score per 1000 LOC).
 - Risk-weighted scoring system for findings (Critical: 10.0, High: 5.0, Medium: 3.0, Low: 1.0, Info: 0.1).
 - Automatic language detection from file extensions for correlation between findings and LOC metrics.
@@ -18,6 +20,7 @@ and this project adheres to
 - Re-added `ingest_metrics` and `ingest_findings` to CLI with correct data routing.
 
 ### Changed
+- Refactored `cluster.py` to support multi-tool clustering and proximity-based grouping.
 - Refactored `ingest.py` to use `INTEGER PRIMARY KEY AUTOINCREMENT` for the `metrics` table.
 - Consolidated normalization logic in `ingest.py`, moving away from fragmented `normalize.py`.
 - Updated `stats` and `report` commands to use the new JSON loading and normalization flow.

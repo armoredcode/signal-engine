@@ -12,7 +12,7 @@ from signal_engine.ingest import (
     fetch_findings,
     get_repo_db_path,
 )
-from signal_engine.cluster import top_rules, top_files, cluster_findings
+from signal_engine.cluster import top_rules, top_files, cluster_findings, smart_cluster
 from signal_engine.export import export_csv
 from signal_engine.analytics import get_vulnerability_density
 from signal_engine.migrations import (
@@ -243,6 +243,38 @@ def hotspots(
 
     for s in density_stats:
         typer.echo(f"{s['language']:<20} | {s['findings']:<10} | {s['risk_score']:<12.1f} | {s['loc']:<8} | {s['density']:<22.2f}")
+
+
+@app.command()
+def dedup(
+    repo_name: str = typer.Option(..., help="Repository name to analyze"),
+    threshold: int = typer.Option(3, help="Line proximity threshold for deduplication"),
+):
+    """
+    Intelligent deduplication across tools. Groups findings in the same file
+    that are within 'threshold' lines of each other.
+    """
+    findings = fetch_findings(repo_name)
+    if not findings:
+        typer.echo("No findings found for this repository.")
+        return
+
+    clusters = smart_cluster(findings, line_threshold=threshold)
+    
+    typer.echo(f"\nSmart Deduplication for '{repo_name}' (Threshold: {threshold} lines):")
+    typer.echo(f"{'File':<30} | {'Line':<6} | {'Findings':<10} | {'Tools'}")
+    typer.echo("-" * 75)
+
+    for (file_path, line, _), cluster in clusters.items():
+        # Shorten path for display
+        short_path = (file_path[:27] + '...') if len(file_path) > 30 else file_path
+        
+        # Get unique tools in this cluster
+        tools = set(f["tool"] for f in cluster)
+        
+        typer.echo(f"{short_path:<30} | {line:<6} | {len(cluster):<10} | {', '.join(tools)}")
+
+    typer.echo(f"\nSummary: {len(findings)} raw findings collapsed into {len(clusters)} logical incidents.")
 
 
 @app.command()
