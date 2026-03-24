@@ -22,6 +22,10 @@ and this project adheres to
 
 - **Database Refactoring**: Centralized database schema management. `init_db` now utilizes the migration system as the single source of truth instead of manual table creation.
 - **Migration Flexibility**: Added a `quiet` parameter to `apply_migrations` to allow silent schema updates when called programmatically (e.g., during ingestion).
+- **Documentation Overhaul**: Updated `README.md` with:
+  - Comprehensive list of all 12+ supported tools.
+  - New "Development & Testing" section with `pytest` instructions.
+  - New "Contributing" guide specifically explaining how to add support for new static analysis tools.
 
 ### Fixed
 

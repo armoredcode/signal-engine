@@ -14,7 +14,18 @@ actionable insights:
 
 ## Currently supported tools
 
-- semgrep
+- **semgrep**
+- **bandit**
+- **SARIF** (Generic support for dr_source, CodeQL, etc.)
+- **gitleaks**
+- **trivy**
+- **ruff**
+- **brakeman**
+- **gosec**
+- **checkov**
+- **hadolint**
+- **dawnscanner**
+- **cloc** (for metrics and risk density calculation)
 
 ## Features
 
@@ -144,6 +155,50 @@ that this don't apply pending migrations.
 ```sh
 signal-cli migrate --repo-name myrepo
 ```
+
+## Development & Testing
+
+Signal Engine uses `pytest` for automated testing and `pytest-cov` for coverage
+analysis.
+
+### Running tests
+
+To run the full test suite with coverage reporting:
+
+```sh
+pytest
+```
+
+This will run all tests in the `tests/` directory and print a coverage report
+to the terminal.
+
+### Project structure
+
+- `signal_engine/cli.py` – CLI implementation using `typer`
+- `signal_engine/ingest.py` – Data ingestion and tool normalization
+- `signal_engine/cluster.py` – Smart clustering and deduplication logic
+- `signal_engine/analytics.py` – Risk density and hotspot calculations
+- `signal_engine/migrations/` – SQL migration files for DB schema
+
+## Contributing
+
+We welcome contributions to Signal Engine!
+
+### Adding support for a new tool
+
+To add support for a new static analysis tool:
+
+1.  Open `signal_engine/ingest.py`.
+2.  Add a new entry to the `TOOL_FIELD_MAP` dictionary.
+3.  Define how to map the tool's JSON fields to the standard Signal Engine fields:
+    - `rule_id`
+    - `file_path`
+    - `message`
+    - `severity`
+    - `line_number`
+4.  If the tool has a nested structure, use a `tuple` to represent the path to
+    the field (e.g., `("extra", "severity")`).
+5.  Add a test case in `tests/test_ingest.py` to verify the mapping.
 
 ## LICENSE
 
