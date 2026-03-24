@@ -41,43 +41,43 @@ def get_vulnerability_density(repo_name, tool=None):
         return []
 
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
     try:
-        # 1. Get findings with their severity
-        query = "SELECT file_path, severity FROM findings"
-        params = []
-        if tool:
-            query += " WHERE tool = ?"
-            params.append(tool)
-        
-        cursor.execute(query, params)
-        findings = cursor.fetchall()
-    except sqlite3.OperationalError:
-        conn.close()
-        return []
+        cursor = conn.cursor()
 
-    # 2. Calculate Risk Score by language
-    risk_by_lang = {}
-    findings_count_by_lang = {}
-    
-    for path, severity in findings:
-        lang = get_language_from_path(path)
-        weight = SEVERITY_WEIGHTS.get(str(severity).upper(), 1.0) # Default to LOW weight if unknown
-        
-        risk_by_lang[lang] = risk_by_lang.get(lang, 0.0) + weight
-        findings_count_by_lang[lang] = findings_count_by_lang.get(lang, 0) + 1
+        try:
+            # 1. Get findings with their severity
+            query = "SELECT file_path, severity FROM findings"
+            params = []
+            if tool:
+                query += " WHERE tool = ?"
+                params.append(tool)
+            
+            cursor.execute(query, params)
+            findings = cursor.fetchall()
+        except sqlite3.OperationalError:
+            return []
 
-    # 3. Get LOC from metrics table
-    try:
-        cursor.execute("""
-            SELECT language, value 
-            FROM metrics 
-            WHERE tool = 'cloc' AND metric_type = 'code_lines'
-        """)
-        loc_by_lang = dict(cursor.fetchall())
-    except sqlite3.OperationalError:
-        loc_by_lang = {}
+        # 2. Calculate Risk Score by language
+        risk_by_lang = {}
+        findings_count_by_lang = {}
+        
+        for path, severity in findings:
+            lang = get_language_from_path(path)
+            weight = SEVERITY_WEIGHTS.get(str(severity).upper(), 1.0) # Default to LOW weight if unknown
+            
+            risk_by_lang[lang] = risk_by_lang.get(lang, 0.0) + weight
+            findings_count_by_lang[lang] = findings_count_by_lang.get(lang, 0) + 1
+
+        # 3. Get LOC from metrics table
+        try:
+            cursor.execute("""
+                SELECT language, value 
+                FROM metrics 
+                WHERE tool = 'cloc' AND metric_type = 'code_lines'
+            """)
+            loc_by_lang = dict(cursor.fetchall())
+        except sqlite3.OperationalError:
+            loc_by_lang = {}
     finally:
         conn.close()
 

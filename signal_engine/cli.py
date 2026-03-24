@@ -304,50 +304,51 @@ def info(
 
     # Connect to DB
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    # Fetch metadata
-    cursor.execute("SELECT key, value FROM metadata")
-    metadata = dict(cursor.fetchall())
-    
-    ingest_time = metadata.get("created_at", "unknown")
-    db_version = metadata.get("db_version", "unknown")
-    tool_version = metadata.get("tool_version", "unknown")
+        # Fetch metadata
+        cursor.execute("SELECT key, value FROM metadata")
+        metadata = dict(cursor.fetchall())
+        
+        ingest_time = metadata.get("created_at", "unknown")
+        db_version = metadata.get("db_version", "unknown")
+        tool_version = metadata.get("tool_version", "unknown")
 
-    # Count findings
-    cursor.execute("SELECT COUNT(*) FROM findings")
-    count = cursor.fetchone()[0]
-    
-    # Count metrics
-    cursor.execute("SELECT COUNT(*) FROM metrics")
-    metrics_count = cursor.fetchone()[0]
+        # Count findings
+        cursor.execute("SELECT COUNT(*) FROM findings")
+        count = cursor.fetchone()[0]
+        
+        # Count metrics
+        cursor.execute("SELECT COUNT(*) FROM metrics")
+        metrics_count = cursor.fetchone()[0]
 
-    info_text = Text()
-    info_text.append(f"Repository: ", style="bold cyan")
-    info_text.append(f"{repo_name}\n")
-    info_text.append(f"DB Path: ", style="bold cyan")
-    info_text.append(f"{db_path}\n")
-    info_text.append(f"Ingest Time: ", style="bold yellow")
-    info_text.append(f"{ingest_time}\n")
-    info_text.append(f"Findings: ", style="bold green")
-    info_text.append(f"{count}\n")
-    info_text.append(f"Metrics: ", style="bold green")
-    info_text.append(f"{metrics_count}\n")
-    
-    if verbose:
-        info_text.append(f"DB Version: ", style="dim")
-        info_text.append(f"{db_version}\n", style="dim")
-        info_text.append(f"Tool Version: ", style="dim")
-        info_text.append(f"{tool_version}\n", style="dim")
+        info_text = Text()
+        info_text.append(f"Repository: ", style="bold cyan")
+        info_text.append(f"{repo_name}\n")
+        info_text.append(f"DB Path: ", style="bold cyan")
+        info_text.append(f"{db_path}\n")
+        info_text.append(f"Ingest Time: ", style="bold yellow")
+        info_text.append(f"{ingest_time}\n")
+        info_text.append(f"Findings: ", style="bold green")
+        info_text.append(f"{count}\n")
+        info_text.append(f"Metrics: ", style="bold green")
+        info_text.append(f"{metrics_count}\n")
+        
+        if verbose:
+            info_text.append(f"DB Version: ", style="dim")
+            info_text.append(f"{db_version}\n", style="dim")
+            info_text.append(f"Tool Version: ", style="dim")
+            info_text.append(f"{tool_version}\n", style="dim")
 
-        # Tools present
-        cursor.execute("SELECT DISTINCT tool FROM findings")
-        tools = [r[0] for r in cursor.fetchall()]
-        if tools:
-            info_text.append(f"\nTools in DB: ", style="bold magenta")
-            info_text.append(f"{', '.join(tools)}\n")
-
-    conn.close()
+            # Tools present
+            cursor.execute("SELECT DISTINCT tool FROM findings")
+            tools = [r[0] for r in cursor.fetchall()]
+            if tools:
+                info_text.append(f"\nTools in DB: ", style="bold magenta")
+                info_text.append(f"{', '.join(tools)}\n")
+    finally:
+        conn.close()
     
     console.print(Panel(info_text, title=f"[bold]Repo Info: {repo_name}[/bold]", border_style="blue", expand=False))
 

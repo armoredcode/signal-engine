@@ -14,55 +14,59 @@ def iter_migrations():
 
 def missing_migrations(db_path, all_versions):
     conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-
     try:
-        applied = {
-            row[0] for row in cur.execute("SELECT version FROM schema_migrations")
-        }
-    except sqlite3.OperationalError:
-        # La tabella schema_migrations non esiste → tutte le migrazioni sono mancanti
-        return all_versions
+        cur = conn.cursor()
+
+        try:
+            applied = {
+                row[0] for row in cur.execute("SELECT version FROM schema_migrations")
+            }
+        except sqlite3.OperationalError:
+            # La tabella schema_migrations non esiste → tutte le migrazioni sono mancanti
+            return all_versions
+    finally:
+        conn.close()
 
     return all_versions - applied
 
 
 def apply_migrations(db_path, quiet=False):
     conn = sqlite3.connect(db_path)
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            version TEXT PRIMARY KEY,
-            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-
     try:
-        applied = {
-            row[0] for row in cur.execute("SELECT version FROM schema_migrations")
-        }
-    except sqlite3.OperationalError:
-        applied = set()
+        cur = conn.cursor()
 
-    for m in iter_migrations():
-        version = m.stem
-        if version in applied:
-            continue
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version TEXT PRIMARY KEY,
+                applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
 
         try:
-            sql = m.read_text()
-            cur.executescript(sql)
-        except sqlite3.Error as e:
-            conn.rollback()
-            raise RuntimeError(f"Errore applicando migrazione {version}: {e}") from e
-        cur.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
+            applied = {
+                row[0] for row in cur.execute("SELECT version FROM schema_migrations")
+            }
+        except sqlite3.OperationalError:
+            applied = set()
 
-        conn.commit()
-        applied.add(version)
+        for m in iter_migrations():
+            version = m.stem
+            if version in applied:
+                continue
 
-        if not quiet:
-            print(f"Applied migration {version}")
+            try:
+                sql = m.read_text()
+                cur.executescript(sql)
+            except sqlite3.Error as e:
+                conn.rollback()
+                raise RuntimeError(f"Errore applicando migrazione {version}: {e}") from e
+            cur.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
 
-    conn.close()
+            conn.commit()
+            applied.add(version)
+
+            if not quiet:
+                print(f"Applied migration {version}")
+    finally:
+        conn.close()

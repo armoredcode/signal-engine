@@ -145,27 +145,28 @@ def init_db(db_path: str):
 
     # 2. Update dynamic metadata
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    # Insert or update metadata
-    cursor.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
-        ("db_version", DB_SCHEMA_VERSION),
-    )
-    cursor.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
-        ("tool_version", __version__),
-    )
-    # Only set created_at if it doesn't exist
-    cursor.execute("SELECT 1 FROM metadata WHERE key = 'created_at'")
-    if not cursor.fetchone():
+        # Insert or update metadata
         cursor.execute(
-            "INSERT INTO metadata (key, value) VALUES (?, ?)",
-            ("created_at", datetime.now(timezone.utc).isoformat()),
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+            ("db_version", DB_SCHEMA_VERSION),
         )
-
-    conn.commit()
-    conn.close()
+        cursor.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+            ("tool_version", __version__),
+        )
+        # Only set created_at if it doesn't exist
+        cursor.execute("SELECT 1 FROM metadata WHERE key = 'created_at'")
+        if not cursor.fetchone():
+            cursor.execute(
+                "INSERT INTO metadata (key, value) VALUES (?, ?)",
+                ("created_at", datetime.now(timezone.utc).isoformat()),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def hash_message(message: str) -> str:
@@ -178,40 +179,41 @@ def ingest_metrics(cloc_data: dict, repo_name: str):
     init_db(db_path)
 
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    for language, stats in cloc_data.items():
-        if language in ("header", "SUM"):
-            continue
+        for language, stats in cloc_data.items():
+            if language in ("header", "SUM"):
+                continue
 
-        cursor.execute(
-            """
-            INSERT INTO metrics (
-                tool,
-                language,
-                metric_type,
-                value
+            cursor.execute(
+                """
+                INSERT INTO metrics (
+                    tool,
+                    language,
+                    metric_type,
+                    value
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                ("cloc", language, "code_lines", stats.get("code", 0)),
             )
-            VALUES (?, ?, ?, ?)
-            """,
-            ("cloc", language, "code_lines", stats.get("code", 0)),
-        )
 
-        cursor.execute(
-            """
-            INSERT INTO metrics (
-                tool,
-                language,
-                metric_type,
-                value
+            cursor.execute(
+                """
+                INSERT INTO metrics (
+                    tool,
+                    language,
+                    metric_type,
+                    value
+                )
+                VALUES (?, ?, ?, ?)
+                """,
+                ("cloc", language, "files", stats.get("nFiles", 0)),
             )
-            VALUES (?, ?, ?, ?)
-            """,
-            ("cloc", language, "files", stats.get("nFiles", 0)),
-        )
-
-    conn.commit()
-    conn.close()
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def ingest_findings(findings: List[dict], repo_name: str):
@@ -220,30 +222,32 @@ def ingest_findings(findings: List[dict], repo_name: str):
     init_db(db_path)
 
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    now = datetime.now(timezone.utc).isoformat()
+    try:
+        cursor = conn.cursor()
+        now = datetime.now(timezone.utc).isoformat()
 
-    for f in findings:
-        cursor.execute(
-            """
-        INSERT OR IGNORE INTO findings (
-            repo, tool, file_path, line_number, rule_id, message, message_hash, severity, ingest_time
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-            (
-                f.get("repo", repo_name),
-                f["tool"],
-                f["file_path"],
-                f["line_number"],
-                f["rule_id"],
-                f["message"],
-                hash_message(f["message"]),
-                f.get("severity"),
-                now,
-            ),
-        )
-    conn.commit()
-    conn.close()
+        for f in findings:
+            cursor.execute(
+                """
+            INSERT OR IGNORE INTO findings (
+                repo, tool, file_path, line_number, rule_id, message, message_hash, severity, ingest_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    f.get("repo", repo_name),
+                    f["tool"],
+                    f["file_path"],
+                    f["line_number"],
+                    f["rule_id"],
+                    f["message"],
+                    hash_message(f["message"]),
+                    f.get("severity"),
+                    now,
+                ),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def fetch_findings(
@@ -255,24 +259,26 @@ def fetch_findings(
         return []
 
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    query = "SELECT repo, tool, file_path, line_number, rule_id, message, severity FROM findings"
-    params = []
-    conditions = []
+        query = "SELECT repo, tool, file_path, line_number, rule_id, message, severity FROM findings"
+        params = []
+        conditions = []
 
-    if file:
-        conditions.append("file_path = ?")
-        params.append(file)
-    if tool:
-        conditions.append("tool = ?")
-        params.append(tool)
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
+        if file:
+            conditions.append("file_path = ?")
+            params.append(file)
+        if tool:
+            conditions.append("tool = ?")
+            params.append(tool)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
 
-    cursor.execute(query, params)
-    rows = cursor.fetchall()
-    conn.close()
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
 
     return [
         {
@@ -295,8 +301,10 @@ def get_metadata(repo_name: str) -> dict:
         return {}
 
     conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    cursor.execute("SELECT key, value FROM metadata")
-    data = dict(cursor.fetchall())
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM metadata")
+        data = dict(cursor.fetchall())
+    finally:
+        conn.close()
     return data
