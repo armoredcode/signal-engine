@@ -35,3 +35,7 @@ packages = ["signal_engine"]
 
 [tool.setuptools.dynamic]
 version = { attr = "signal_engine.__version__" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=signal_engine --cov-report=term-missing"

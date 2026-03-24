@@ -35,19 +35,27 @@ def get_vulnerability_density(repo_name, tool=None):
     Risk Score = Sum(finding_weight)
     Risk Density = (Risk Score / LOC) * 1000
     """
+    import os
     db_path = get_repo_db_path(repo_name)
+    if not os.path.exists(db_path):
+        return []
+
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # 1. Get findings with their severity
-    query = "SELECT file_path, severity FROM findings"
-    params = []
-    if tool:
-        query += " WHERE tool = ?"
-        params.append(tool)
-    
-    cursor.execute(query, params)
-    findings = cursor.fetchall()
+    try:
+        # 1. Get findings with their severity
+        query = "SELECT file_path, severity FROM findings"
+        params = []
+        if tool:
+            query += " WHERE tool = ?"
+            params.append(tool)
+        
+        cursor.execute(query, params)
+        findings = cursor.fetchall()
+    except sqlite3.OperationalError:
+        conn.close()
+        return []
 
     # 2. Calculate Risk Score by language
     risk_by_lang = {}
@@ -61,13 +69,17 @@ def get_vulnerability_density(repo_name, tool=None):
         findings_count_by_lang[lang] = findings_count_by_lang.get(lang, 0) + 1
 
     # 3. Get LOC from metrics table
-    cursor.execute("""
-        SELECT language, value 
-        FROM metrics 
-        WHERE tool = 'cloc' AND metric_type = 'code_lines'
-    """)
-    loc_by_lang = dict(cursor.fetchall())
-    conn.close()
+    try:
+        cursor.execute("""
+            SELECT language, value 
+            FROM metrics 
+            WHERE tool = 'cloc' AND metric_type = 'code_lines'
+        """)
+        loc_by_lang = dict(cursor.fetchall())
+    except sqlite3.OperationalError:
+        loc_by_lang = {}
+    finally:
+        conn.close()
 
     # 4. Consolidate results
     results = []

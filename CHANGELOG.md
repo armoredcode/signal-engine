@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Comprehensive Test Suite**: Implemented a full suite of automated tests using `pytest`, reaching **91% total code coverage**.
+  - New tests for `ingest`, `cluster`, `analytics`, `export`, `migrations`, and the `CLI`.
+  - Added `pytest-cov` for coverage reporting.
+  - Configured `pytest` in `pyproject.toml` with default options.
+  - Integrated `typer.testing.CliRunner` for end-to-end CLI validation.
+  - Added a shared `conftest.py` with fixtures for isolated database testing.
+
+### Fixed
+
+- **Robustness in Analytics**: Fixed a potential crash in `get_vulnerability_density` when a repository database or its tables were missing or uninitialized.
+
 ## [0.3.0] - 2026-03-23
 
 ### Added
