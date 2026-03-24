@@ -137,46 +137,15 @@ def get_repo_db_path(repo_name: str) -> str:
 
 
 def init_db(db_path: str):
-    """Create DB schema if not exists, including metadata table."""
+    """Ensure DB schema is initialized via migrations and metadata is updated."""
+    from signal_engine.migrations import apply_migrations
+
+    # 1. Run migrations (this creates schema_migrations, findings, metrics, etc.)
+    apply_migrations(db_path, quiet=True)
+
+    # 2. Update dynamic metadata
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-
-    # Findings table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS findings (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        repo TEXT NOT NULL,
-        tool TEXT NOT NULL,
-        file_path TEXT NOT NULL,
-        line_number INTEGER NOT NULL,
-        rule_id TEXT NOT NULL,
-        message TEXT NOT NULL,
-        message_hash TEXT NOT NULL,
-        severity TEXT,
-        ingest_time DATETIME NOT NULL,
-        UNIQUE(repo, tool, file_path, line_number, rule_id, message_hash)
-    )
-    """)
-    # metrics table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS metrics (
-        id            INTEGER PRIMARY KEY AUTOINCREMENT,
-        tool          TEXT NOT NULL,
-        run_id        TEXT,
-        language      TEXT,
-        metric_type   TEXT NOT NULL,
-        value         REAL NOT NULL,
-        created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        extra         TEXT)
-    """)
-
-    # Metadata table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS metadata (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-    )
-    """)
 
     # Insert or update metadata
     cursor.execute(
@@ -187,10 +156,13 @@ def init_db(db_path: str):
         "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
         ("tool_version", __version__),
     )
-    cursor.execute(
-        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
-        ("created_at", datetime.now(timezone.utc).isoformat()),
-    )
+    # Only set created_at if it doesn't exist
+    cursor.execute("SELECT 1 FROM metadata WHERE key = 'created_at'")
+    if not cursor.fetchone():
+        cursor.execute(
+            "INSERT INTO metadata (key, value) VALUES (?, ?)",
+            ("created_at", datetime.now(timezone.utc).isoformat()),
+        )
 
     conn.commit()
     conn.close()

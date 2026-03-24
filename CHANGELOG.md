@@ -16,6 +16,12 @@ and this project adheres to
   - Configured `pytest` in `pyproject.toml` with default options.
   - Integrated `typer.testing.CliRunner` for end-to-end CLI validation.
   - Added a shared `conftest.py` with fixtures for isolated database testing.
+- **Initial Schema Migration**: Added `20260101_01_initial_schema.sql` to manage the core database structure via the migration system.
+
+### Changed
+
+- **Database Refactoring**: Centralized database schema management. `init_db` now utilizes the migration system as the single source of truth instead of manual table creation.
+- **Migration Flexibility**: Added a `quiet` parameter to `apply_migrations` to allow silent schema updates when called programmatically (e.g., during ingestion).
 
 ### Fixed
 

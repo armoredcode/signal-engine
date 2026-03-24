@@ -27,7 +27,7 @@ def missing_migrations(db_path, all_versions):
     return all_versions - applied
 
 
-def apply_migrations(db_path):
+def apply_migrations(db_path, quiet=False):
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
 
@@ -62,6 +62,7 @@ def apply_migrations(db_path):
         conn.commit()
         applied.add(version)
 
-        print(f"Applied migration {version}")
+        if not quiet:
+            print(f"Applied migration {version}")
 
     conn.close()
